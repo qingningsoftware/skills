@@ -1,0 +1,231 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""model-switch: 切换 Claude Code 的模型提供商配置。
+
+用法:
+  python model_switch.py list              # 列出所有提供商，标记当前生效
+  python model_switch.py status            # 查看 settings.json 当前生效配置
+  python model_switch.py switch <key>      # 切换到指定提供商（自动备份 settings.json）
+
+选项:
+  --profiles <path>   指定 model-profiles.json 路径（默认 ~/.claude/model-profiles.json）
+  --settings <path>   指定 settings.json 路径（默认 ~/.claude/settings.json）
+
+说明:
+  - model-profiles.json 是唯一配置源；脚本只改写 settings.json 的 env 中这 5 个变量:
+      ANTHROPIC_BASE_URL
+      ANTHROPIC_AUTH_TOKEN
+      ANTHROPIC_DEFAULT_OPUS_MODEL
+      ANTHROPIC_DEFAULT_SONNET_MODEL
+      ANTHROPIC_DEFAULT_HAIKU_MODEL
+  - 其余变量（包括带 -glm/-qwen 等后缀的备份变量）一律原样保留。
+  - profile 里缺失的 model 档位对应的 DEFAULT_*_MODEL 变量会被移除（交由该平台默认模型）。
+  - 每次切换前把 settings.json 备份到 settings.json.bak-model-switch，写入采用临时文件+原子替换。
+"""
+
+import argparse
+import json
+import os
+import shutil
+import sys
+import tempfile
+
+PROFILE_FIELDS = ("opus", "sonnet", "haiku")
+MODEL_VARS = {
+    "opus": "ANTHROPIC_DEFAULT_OPUS_MODEL",
+    "sonnet": "ANTHROPIC_DEFAULT_SONNET_MODEL",
+    "haiku": "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+}
+BASE_URL_VAR = "ANTHROPIC_BASE_URL"
+TOKEN_VAR = "ANTHROPIC_AUTH_TOKEN"
+BACKUP_NAME = "settings.json.bak-model-switch"
+
+
+def out(*args):
+    print(*args, flush=True)
+
+
+def err(*args):
+    print(*args, file=sys.stderr, flush=True)
+
+
+def mask(token: str) -> str:
+    """token 脱敏：保留头尾少量字符，防止截图/分享时泄露。"""
+    if not token:
+        return "(空)"
+    if len(token) <= 10:
+        return token[:2] + "****"
+    return token[:5] + "****" + token[-4:]
+
+
+def load_json(path: str, what: str):
+    if not os.path.isfile(path):
+        err(f"错误: 找不到{what}: {path}")
+        sys.exit(1)
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        err(f"错误: 读取{what}失败: {path}\n  {e}")
+        sys.exit(1)
+
+
+def model_summary(profile: dict) -> str:
+    m = profile.get("model") or {}
+    if not m:
+        return "(无 model 映射，使用平台默认)"
+    return " | ".join(
+        f"{tier}={m[tier]}" for tier in PROFILE_FIELDS if m.get(tier)
+    ) or "(无 model 映射，使用平台默认)"
+
+
+def find_active_key(settings: dict, profiles: dict):
+    """按 baseUrl+token(+models) 匹配当前生效的 profile；匹配不到返回 None。"""
+    env = settings.get("env", {})
+    base_url = env.get(BASE_URL_VAR)
+    token = env.get(TOKEN_VAR)
+    if not base_url or not token:
+        return None
+    candidates = [
+        k for k, p in profiles.items()
+        if p.get("baseUrl") == base_url and p.get("token") == token
+    ]
+    if len(candidates) <= 1:
+        return candidates[0] if candidates else None
+    # 多个候选（如 openrouter/ox 共用同一路由）时，进一步比对三档模型
+    tier_vals = tuple(env.get(MODEL_VARS[t], "") for t in PROFILE_FIELDS)
+    exact = [
+        k for k in candidates
+        if tuple((profiles[k].get("model") or {}).get(t, "") for t in PROFILE_FIELDS) == tier_vals
+    ]
+    if len(exact) == 1:
+        return exact[0]
+    return None
+
+
+def cmd_list(args):
+    profiles = load_json(args.profiles, "model-profiles.json")
+    settings = load_json(args.settings, "settings.json")
+    active = find_active_key(settings, profiles)
+    out(f"可用模型提供商（共 {len(profiles)} 个，来源: {args.profiles}）:")
+    out("")
+    for i, (key, p) in enumerate(profiles.items(), 1):
+        mark = "  <-- 当前生效" if key == active else ""
+        out(f"{i:>2}. {key:<12} {p.get('name', key)}{mark}")
+        out(f"     baseUrl: {p.get('baseUrl', '(未配置)')}")
+        out(f"     token:   {mask(p.get('token', ''))}")
+        out(f"     models:  {model_summary(p)}")
+    out("")
+    out("切换: python model_switch.py switch <key>")
+    return 0
+
+
+def cmd_status(args):
+    profiles = load_json(args.profiles, "model-profiles.json")
+    settings = load_json(args.settings, "settings.json")
+    env = settings.get("env", {})
+    out(f"当前生效配置（{args.settings} 的 env）:")
+    out(f"  {BASE_URL_VAR}: {env.get(BASE_URL_VAR, '(未设置)')}")
+    out(f"  {TOKEN_VAR}: {mask(env.get(TOKEN_VAR, ''))}")
+    for tier in PROFILE_FIELDS:
+        out(f"  {MODEL_VARS[tier]}: {env.get(MODEL_VARS[tier], '(未设置)')}")
+    active = find_active_key(settings, profiles)
+    if active:
+        out(f"匹配提供商: {active} ({profiles[active].get('name', active)})")
+    else:
+        out("匹配提供商: 无（当前配置不来自 model-profiles.json，或为自定义配置）")
+    return 0
+
+
+def cmd_switch(args):
+    profiles = load_json(args.profiles, "model-profiles.json")
+    key = args.key
+    if key not in profiles:
+        err(f"错误: 没有名为 '{key}' 的提供商。可用: {', '.join(profiles)}")
+        sys.exit(1)
+    profile = profiles[key]
+
+    settings = load_json(args.settings, "settings.json")
+
+    # 切换前备份（settings.json.bak-model-switch，每次切换前覆盖为最新快照）
+    backup_path = os.path.join(os.path.dirname(os.path.abspath(args.settings)), BACKUP_NAME)
+    try:
+        shutil.copy2(args.settings, backup_path)
+    except OSError as e:
+        err(f"错误: 备份 settings.json 失败: {e}")
+        sys.exit(1)
+
+    env = settings.setdefault("env", {})
+    env[BASE_URL_VAR] = profile.get("baseUrl", "")
+    env[TOKEN_VAR] = profile.get("token", "")
+    model_map = profile.get("model") or {}
+    for tier in PROFILE_FIELDS:
+        var = MODEL_VARS[tier]
+        if model_map.get(tier):
+            env[var] = model_map[tier]
+        else:
+            env.pop(var, None)  # 缺失档位移除变量，交由平台默认
+
+    # 原子写入：先写临时文件，再替换，避免写一半损坏配置
+    settings_dir = os.path.dirname(os.path.abspath(args.settings))
+    try:
+        fd, tmp_path = tempfile.mkstemp(dir=settings_dir, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(settings, f, ensure_ascii=False, indent=2)
+                f.write("\n")
+            os.replace(tmp_path, args.settings)
+        except BaseException:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            raise
+    except OSError as e:
+        err(f"错误: 写入 settings.json 失败: {e}")
+        err(f"备份仍在: {backup_path}")
+        sys.exit(1)
+
+    out(f"当前模型已修改成 {profile.get('name', key)}（{key}）")
+    out(f"  baseUrl: {profile.get('baseUrl', '')}")
+    out(f"  models:  {model_summary(profile)}")
+    out(f"  备份:    {backup_path}")
+    return 0
+
+
+def main():
+    # Windows 下：真实控制台走系统编码即可正常显示中文；
+    # 被管道捕获时（如 Claude Code 的 Bash 工具）默认是 ANSI 代码页（GBK），
+    # 会与捕获端的 UTF-8 解码不一致导致乱码，因此强制 UTF-8 输出。
+    try:
+        if not sys.stdout.isatty():
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        if not sys.stderr.isatty():
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+    parser = argparse.ArgumentParser(
+        prog="model_switch.py", description="切换 Claude Code 模型提供商"
+    )
+    parser.add_argument(
+        "command", nargs="?", default="list",
+        choices=["list", "status", "switch"],
+        help="list=列出提供商; status=查看当前配置; switch=切换（不带命令时等同 list）",
+    )
+    parser.add_argument("key", nargs="?", help="switch 的目标提供商 key")
+    parser.add_argument("--profiles", default=os.path.join(os.path.expanduser("~"), ".claude", "model-profiles.json"))
+    parser.add_argument("--settings", default=os.path.join(os.path.expanduser("~"), ".claude", "settings.json"))
+    args = parser.parse_args()
+
+    if args.command == "switch":
+        if not args.key:
+            err("错误: switch 需要提供商 key。用法: python model_switch.py switch <key>")
+            err("可用提供商请运行: python model_switch.py list")
+            sys.exit(1)
+        sys.exit(cmd_switch(args))
+    if args.command == "status":
+        sys.exit(cmd_status(args))
+    sys.exit(cmd_list(args))
+
+
+if __name__ == "__main__":
+    main()

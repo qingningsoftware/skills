@@ -1,0 +1,12 @@
+{
+  "glm": {
+    "name": "GLM",
+    "baseUrl": "https://open.bigmodel.cn/api/anthropic",
+    "token": "在这里填入你的 API Token",
+    "model": {
+      "opus": "glm-5.3",
+      "sonnet": "glm-5.3-flash",
+      "haiku": "glm-5.3-flash"
+    }
+  }
+}
