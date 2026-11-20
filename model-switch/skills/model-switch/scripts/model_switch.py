@@ -6,6 +6,9 @@
   python model_switch.py list              # 列出所有提供商，标记当前生效
   python model_switch.py status            # 查看 settings.json 当前生效配置
   python model_switch.py switch <key>      # 切换到指定提供商（自动备份 settings.json）
+  python model_switch.py add <key> ...     # 添加提供商（自动备份 model-profiles.json）
+                                           # 必填: --name --base-url --token
+                                           # 可选: --opus --sonnet --haiku --force(覆盖同名)
 
 选项:
   --profiles <path>   指定 model-profiles.json 路径（默认 ~/.claude/model-profiles.json）
@@ -39,6 +42,7 @@ MODEL_VARS = {
 BASE_URL_VAR = "ANTHROPIC_BASE_URL"
 TOKEN_VAR = "ANTHROPIC_AUTH_TOKEN"
 BACKUP_NAME = "settings.json.bak-model-switch"
+PROFILES_BACKUP_NAME = "model-profiles.json.bak"
 
 
 def out(*args):
@@ -137,6 +141,91 @@ def cmd_status(args):
     return 0
 
 
+def atomic_write_json(path: str, data):
+    """原子写入 JSON：先写临时文件，再替换，避免写一半损坏文件。"""
+    target_dir = os.path.dirname(os.path.abspath(path))
+    try:
+        fd, tmp_path = tempfile.mkstemp(dir=target_dir, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+                f.write("\n")
+            os.replace(tmp_path, path)
+        except BaseException:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            raise
+    except OSError as e:
+        err(f"错误: 原子写入失败: {path}\n  {e}")
+        sys.exit(1)
+
+
+def load_profiles_or_empty(path: str) -> dict:
+    """读取 model-profiles.json；不存在则返回空 dict（首次 add 自动创建）。"""
+    if not os.path.isfile(path):
+        return {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        err(f"错误: 读取 model-profiles.json 失败: {path}\n  {e}")
+        sys.exit(1)
+    if not isinstance(data, dict):
+        err(f"错误: {path} 的顶层应为对象（key -> profile）")
+        sys.exit(1)
+    return data
+
+
+def cmd_add(args):
+    key = args.key
+    if not key:
+        err("错误: add 需要提供商 key。用法: python model_switch.py add <key> --name <名称> --base-url <url> --token <token>")
+        sys.exit(1)
+
+    profiles = load_profiles_or_empty(args.profiles)
+    if key in profiles and not args.force:
+        err(f"错误: 已存在名为 '{key}' 的提供商（{profiles[key].get('name', key)}）。")
+        err(f"如需覆盖请加 --force。可用 key: {', '.join(profiles)}")
+        sys.exit(1)
+
+    # 校验必填项
+    missing = [f for f in ("name", "base_url", "token") if not getattr(args, f)]
+    if missing:
+        err(f"错误: 缺少必填参数: {', '.join('--' + m.replace('_', '-') for m in missing)}")
+        sys.exit(1)
+    if not (args.base_url.startswith("http://") or args.base_url.startswith("https://")):
+        err(f"错误: base-url 必须以 http:// 或 https:// 开头，收到: {args.base_url}")
+        sys.exit(1)
+
+    profile = {"name": args.name, "baseUrl": args.base_url, "token": args.token}
+    model_map = {t: getattr(args, t) for t in PROFILE_FIELDS if getattr(args, t)}
+    if model_map:
+        profile["model"] = model_map
+
+    # 写入前备份 model-profiles.json（文件已存在时）
+    backup_path = os.path.join(os.path.dirname(os.path.abspath(args.profiles)), PROFILES_BACKUP_NAME)
+    if os.path.isfile(args.profiles):
+        try:
+            shutil.copy2(args.profiles, backup_path)
+        except OSError as e:
+            err(f"错误: 备份 model-profiles.json 失败: {e}")
+            sys.exit(1)
+
+    profiles[key] = profile
+    atomic_write_json(args.profiles, profiles)
+
+    action = "已覆盖" if args.force else "已添加"
+    out(f"{action}提供商: {args.name}（{key}）")
+    out(f"  baseUrl: {args.base_url}")
+    out(f"  token:   {mask(args.token)}")
+    out(f"  models:  {model_summary(profile)}")
+    out(f"  配置文件: {args.profiles}")
+    if os.path.isfile(backup_path):
+        out(f"  备份:    {backup_path}")
+    out(f"切换到它: python model_switch.py switch {key}")
+    return 0
+
+
 def cmd_switch(args):
     profiles = load_json(args.profiles, "model-profiles.json")
     key = args.key
@@ -167,22 +256,11 @@ def cmd_switch(args):
             env.pop(var, None)  # 缺失档位移除变量，交由平台默认
 
     # 原子写入：先写临时文件，再替换，避免写一半损坏配置
-    settings_dir = os.path.dirname(os.path.abspath(args.settings))
     try:
-        fd, tmp_path = tempfile.mkstemp(dir=settings_dir, suffix=".tmp")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump(settings, f, ensure_ascii=False, indent=2)
-                f.write("\n")
-            os.replace(tmp_path, args.settings)
-        except BaseException:
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
-            raise
-    except OSError as e:
-        err(f"错误: 写入 settings.json 失败: {e}")
+        atomic_write_json(args.settings, settings)
+    except SystemExit:
         err(f"备份仍在: {backup_path}")
-        sys.exit(1)
+        raise
 
     out(f"当前模型已修改成 {profile.get('name', key)}（{key}）")
     out(f"  baseUrl: {profile.get('baseUrl', '')}")
@@ -208,14 +286,23 @@ def main():
     )
     parser.add_argument(
         "command", nargs="?", default="list",
-        choices=["list", "status", "switch"],
-        help="list=列出提供商; status=查看当前配置; switch=切换（不带命令时等同 list）",
+        choices=["list", "status", "switch", "add"],
+        help="list=列出提供商; status=查看当前配置; switch=切换; add=添加提供商（不带命令时等同 list）",
     )
-    parser.add_argument("key", nargs="?", help="switch 的目标提供商 key")
+    parser.add_argument("key", nargs="?", help="switch/add 的提供商 key")
+    parser.add_argument("--name", help="add: 提供商显示名称（必填）")
+    parser.add_argument("--base-url", help="add: API base URL，http(s):// 开头（必填）")
+    parser.add_argument("--token", help="add: API token（必填）")
+    parser.add_argument("--opus", help="add: opus 档模型映射（可选）")
+    parser.add_argument("--sonnet", help="add: sonnet 档模型映射（可选）")
+    parser.add_argument("--haiku", help="add: haiku 档模型映射（可选）")
+    parser.add_argument("--force", action="store_true", help="add: 覆盖同名提供商")
     parser.add_argument("--profiles", default=os.path.join(os.path.expanduser("~"), ".claude", "model-profiles.json"))
     parser.add_argument("--settings", default=os.path.join(os.path.expanduser("~"), ".claude", "settings.json"))
     args = parser.parse_args()
 
+    if args.command == "add":
+        sys.exit(cmd_add(args))
     if args.command == "switch":
         if not args.key:
             err("错误: switch 需要提供商 key。用法: python model_switch.py switch <key>")

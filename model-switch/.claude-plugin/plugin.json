@@ -1,7 +1,7 @@
 {
   "name": "model-switch",
   "description": "切换 Claude Code 模型提供商配置（GLM/Qwen/Kimi/OpenRouter 等），读写 model-profiles.json 与 settings.json",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": { "name": "zhuyi" },
   "license": "MIT"
 }

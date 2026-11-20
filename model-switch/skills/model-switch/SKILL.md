@@ -1,6 +1,6 @@
 ---
 name: model-switch
-description: 切换 Claude Code 的模型提供商配置（读写 ~/.claude/model-profiles.json 与 ~/.claude/settings.json）。当用户想切换/更换模型或提供商（如"切换到 glm"、"用 kimi"、"换成千问"、"换回 OpenRouter"、"现在用的什么模型"、"有哪些模型/提供商可用"），或输入 /model-switch [list|status|<key>] 时，必须使用本 skill。
+description: 切换 Claude Code 的模型提供商配置（读写 ~/.claude/model-profiles.json 与 ~/.claude/settings.json）。当用户想切换/更换模型或提供商（如"切换到 glm"、"用 kimi"、"换成千问"、"换回 OpenRouter"、"现在用的什么模型"、"有哪些模型/提供商可用"）、添加新的模型提供商（如"加个提供商"、"添加 kimi 配置"），或输入 /model-switch [list|status|add|<key>] 时，必须使用本 skill。
 ---
 
 # model-switch — Claude Code 模型提供商切换
@@ -21,6 +21,27 @@ description: 切换 Claude Code 的模型提供商配置（读写 ~/.claude/mode
 | `/model-switch status` | 运行 `python <脚本> status`，展示当前生效配置 |
 | `/model-switch <key>` | 运行 `python <脚本> switch <key>`；成功后告诉用户"当前模型已修改成 <name>（<key>）" |
 | `/model-switch`（无参数） | 运行 `list`，把全部提供商整理成 markdown 表格输出（含"当前生效"标记），请用户直接回复要切换的 key。不要用 AskUserQuestion 弹窗做选择——它最多只能显示 4 个选项，提供商多于 4 个时必然列不全 |
+| `/model-switch add` | 进入添加模式：先提示用户粘贴以下信息（一次贴齐或分多轮都行，缺哪项追问哪项），收齐后运行脚本写入。**不要把收到的 token 显示在回复里** |
+
+## 添加提供商（/model-switch add）
+
+向用户收集以下信息（提示用户直接粘贴）：
+
+1. **key**：切换命令用的短标识，建议小写英文/数字/连字符（如 `glm`、`kimi`、`my-provider`）
+2. **名称**（name）：显示名称（如 `GLM`、`Kimi`）
+3. **baseUrl**：API 地址，必须 `http://` 或 `https://` 开头
+4. **token**：API 密钥
+5. **模型映射**（可选）：opus / sonnet / haiku 三档分别用什么模型；不知道或不适用就留空（如 OpenRouter 用平台默认）
+
+收齐后运行：
+
+```bash
+python <脚本路径> add <key> --name <名称> --base-url <url> --token <token> [--opus <m>] [--sonnet <m>] [--haiku <m>]
+```
+
+- 脚本会校验 URL 格式、拦截重复 key（覆盖同名需加 `--force`），写入前自动备份 `model-profiles.json`，原子写入。
+- key 已存在时把冲突告诉用户：换一个 key，或确认后加 `--force` 覆盖。
+- 成功后告诉用户"已添加提供商 <name>（<key>），要切换到它请回复 /model-switch <key>"。
 
 ## 注意
 

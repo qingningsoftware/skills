@@ -9,6 +9,7 @@
 | `/model-switch` | 列出所有提供商，选完直接切换 |
 | `/model-switch list` | 列出所有提供商（标记当前生效，token 脱敏显示） |
 | `/model-switch status` | 查看当前 `settings.json` 生效配置及匹配的提供商 |
+| `/model-switch add` | 添加新的模型提供商（收集 key/名称/baseUrl/token/模型映射后写入配置） |
 | `/model-switch <key>` | 直接切换，如 `/model-switch glm`、`/model-switch kimi` |
 
 也可以绕过 Claude 直接在终端运行脚本：
@@ -17,6 +18,9 @@
 python ~/.claude/skills/model-switch/scripts/model_switch.py list
 python ~/.claude/skills/model-switch/scripts/model_switch.py status
 python ~/.claude/skills/model-switch/scripts/model_switch.py switch glm
+python ~/.claude/skills/model-switch/scripts/model_switch.py add my-provider \
+  --name "My Provider" --base-url https://api.example.com/anthropic \
+  --token sk-xxx --opus m1 --sonnet m2 --haiku m3   # 模型映射可选，覆盖同名加 --force
 # 可选参数：
 #   --profiles <path>  指定 model-profiles.json 路径
 #   --settings <path>  指定 settings.json 路径（测试时很有用）
@@ -52,9 +56,12 @@ claude plugin install model-switch@zhuyi-skills
 
 ### 首次使用
 
-1. 复制仓库中的 `skills/model-switch/model-profiles.example.json` 为 `~/.claude/model-profiles.json`；
-2. 把 token 换成你自己的 API Token（按同样格式可添加任意多个提供商）；
-3. 重启 Claude Code，运行 `/model-switch list` 确认。
+两种方式任选：
+
+- **推荐**：直接运行 `/model-switch add`，按提示粘贴 key、名称、baseUrl、token、模型映射即可自动写入；
+- 或手动：复制仓库中的 `skills/model-switch/model-profiles.example.json` 为 `~/.claude/model-profiles.json`，把 token 换成你自己的。
+
+完成后运行 `/model-switch list` 确认。
 
 ## 配置文件
 
@@ -89,7 +96,7 @@ claude plugin install model-switch@zhuyi-skills
 
 ## 安全机制
 
-- **自动备份**：每次切换前把 `settings.json` 备份到 `settings.json.bak-model-switch`（同目录，覆盖式快照）。
+- **自动备份**：每次切换前把 `settings.json` 备份到 `settings.json.bak-model-switch`；每次添加提供商前把 `model-profiles.json` 备份到 `model-profiles.json.bak`（均为同目录覆盖式快照）。
 - **原子写入**：先写临时文件再替换，中途失败不会损坏配置。
 - **最小改动**：`env` 中其余变量（包括 `ANTHROPIC_AUTH_TOKEN-glm` 这类带后缀的备份变量）一律原样保留；`env` 以外的配置完全不动。
 - **token 脱敏**：`list`/`status` 输出只显示 token 头尾（如 `6e136****fdTi`），防止截图泄露。
