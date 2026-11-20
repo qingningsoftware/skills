@@ -21,26 +21,30 @@ description: 切换 Claude Code 的模型提供商配置（读写 ~/.claude/mode
 | `/model-switch status` | 运行 `python <脚本> status`，展示当前生效配置 |
 | `/model-switch <key>` | 运行 `python <脚本> switch <key>`；成功后告诉用户"当前模型已修改成 <name>（<key>）" |
 | `/model-switch`（无参数） | 运行 `list`，把全部提供商整理成 markdown 表格输出（含"当前生效"标记），请用户直接回复要切换的 key。不要用 AskUserQuestion 弹窗做选择——它最多只能显示 4 个选项，提供商多于 4 个时必然列不全 |
-| `/model-switch add` | 进入添加模式：先提示用户粘贴以下信息（一次贴齐或分多轮都行，缺哪项追问哪项），收齐后运行脚本写入。**不要把收到的 token 显示在回复里** |
+| `/model-switch add` | 进入添加模式：用 AskUserQuestion **逐项弹窗**录入（每项一个对话框，随时可按 Esc 取消整个流程），全部录完确认后写入。**不要把收到的 token 显示在回复里** |
 
 ## 添加提供商（/model-switch add）
 
-向用户收集以下信息（提示用户直接粘贴）：
+逐项弹窗录入，共 5～6 个对话框，**每个都用 AskUserQuestion 单独弹出，用户在"Other"中输入文本**。任一步用户按 Esc 取消（或选"取消录入"），立即终止流程并告知"已取消，未写入任何配置"。
 
-1. **key**：切换命令用的短标识，建议小写英文/数字/连字符（如 `glm`、`kimi`、`my-provider`）
-2. **名称**（name）：显示名称（如 `GLM`、`Kimi`）
-3. **baseUrl**：API 地址，必须 `http://` 或 `https://` 开头
-4. **token**：API 密钥
-5. **模型映射**（可选）：opus / sonnet / haiku 三档分别用什么模型；不知道或不适用就留空（如 OpenRouter 用平台默认）
+按顺序弹出：
 
-收齐后运行：
+1. **key**：问题"请录入模型提供商 key（切换命令用的短标识，小写英文/数字/连字符）"，选项给"取消录入"
+2. **名称**：问题"请录入模型提供商名称（显示名，如 GLM、Kimi）"，选项给"取消录入"
+3. **baseUrl**：问题"请录入 API 地址 baseUrl（必须 http:// 或 https:// 开头）"，选项给"取消录入"
+4. **token**：问题"请录入 API token（密钥）"，选项给"取消录入"；拿到后**回复中只显示脱敏形式**
+5. **模型映射**（可选）：问题"请录入模型映射（格式如 opus=m1 sonnet=m2 haiku=m3，留空/跳过则用平台默认）"，选项给"跳过（用平台默认）"和"取消录入"；解析用户输入中的 opus=/sonnet=/haiku= 各档
+6. **确认**：汇总展示（token 脱敏、模型映射可省略），问题"确认写入 model-profiles.json 吗？"，选项"确认写入（推荐）"和"取消录入"
+
+用户点 Esc/取消：告知已取消，结束。用户确认后运行：
 
 ```bash
 python <脚本路径> add <key> --name <名称> --base-url <url> --token <token> [--opus <m>] [--sonnet <m>] [--haiku <m>]
 ```
 
 - 脚本会校验 URL 格式、拦截重复 key（覆盖同名需加 `--force`），写入前自动备份 `model-profiles.json`，原子写入。
-- key 已存在时把冲突告诉用户：换一个 key，或确认后加 `--force` 覆盖。
+- key 已存在时把冲突告诉用户：换一个 key，或确认后重新执行带 `--force` 的写入。
+- 校验失败（URL 格式错等）：只重新弹那一个对话框让用户改，已录入的其他项保留在内存中重试，不必从头再来。
 - 成功后告诉用户"已添加提供商 <name>（<key>），要切换到它请回复 /model-switch <key>"。
 
 ## 注意

@@ -9,7 +9,7 @@
 | `/model-switch` | 列出所有提供商，选完直接切换 |
 | `/model-switch list` | 列出所有提供商（标记当前生效，token 脱敏显示） |
 | `/model-switch status` | 查看当前 `settings.json` 生效配置及匹配的提供商 |
-| `/model-switch add` | 添加新的模型提供商（收集 key/名称/baseUrl/token/模型映射后写入配置） |
+| `/model-switch add` | 添加新的模型提供商：逐项弹窗录入 key/名称/baseUrl/token/模型映射（每步可 Esc 取消），确认后写入 |
 | `/model-switch <key>` | 直接切换，如 `/model-switch glm`、`/model-switch kimi` |
 
 也可以绕过 Claude 直接在终端运行脚本：
