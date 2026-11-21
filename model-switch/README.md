@@ -33,33 +33,33 @@ python ~/.claude/skills/model-switch/scripts/model_switch.py add my-provider \
 在 Claude Code 会话内输入：
 
 ```
-/plugin marketplace add asdf112255/skills
-/plugin install model-switch@zhuyi-skills
+/plugin marketplace add qingningsoftware/skills
+/plugin install model-switch@qingning-skills
 ```
 
 或在终端用 CLI 安装：
 
 ```bash
-claude plugin marketplace add asdf112255/skills
-claude plugin install model-switch@zhuyi-skills
+claude plugin marketplace add qingningsoftware/skills
+claude plugin install model-switch@qingning-skills
 ```
 
 安装后重启 Claude Code，输入 `/model-switch` 即可使用。后续更新：
 
 ```
-/plugin marketplace update zhuyi-skills
+/plugin marketplace update qingning-skills
 ```
 
 ### 方式二：手动安装为个人 skill
 
-把仓库中 `skills/model-switch/` 整个目录复制到 `~/.claude/skills/model-switch/`（Windows 即 `C:\Users\<用户名>\.claude\skills\`），重启 Claude Code 后生效。
+把仓库中 `model-switch/skills/model-switch/` 整个目录复制到 `~/.claude/skills/model-switch/`（Windows 即 `C:\Users\<用户名>\.claude\skills\`），重启 Claude Code 后生效。
 
 ### 首次使用
 
 两种方式任选：
 
 - **推荐**：直接运行 `/model-switch add`，按提示粘贴 key、名称、baseUrl、token、模型映射即可自动写入；
-- 或手动：复制仓库中的 `skills/model-switch/model-profiles.example.json` 为 `~/.claude/model-profiles.json`，把 token 换成你自己的。
+- 或手动：复制仓库中的 `model-switch/skills/model-switch/model-profiles.example.json` 为 `~/.claude/model-profiles.json`，把 token 换成你自己的。
 
 完成后运行 `/model-switch list` 确认。
 
@@ -110,9 +110,9 @@ claude plugin install model-switch@zhuyi-skills
 ## 文件清单
 
 ```
-skills/                        # GitHub 仓库 asdf112255/skills = 插件市场仓库
+skills/                  # GitHub 仓库 qingningsoftware/skills = 插件市场仓库
 ├── .claude-plugin/
-│   └── marketplace.json      # 市场清单（市场名 zhuyi-skills，列出各插件）
+│   └── marketplace.json   # 市场清单（市场名 qingning-skills，列出各插件）
 ├── README.md                 # 市场说明 + 安装命令
 └── model-switch/             # 本插件（一个 skill 一个文件夹）
     ├── .claude-plugin/

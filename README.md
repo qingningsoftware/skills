@@ -1,4 +1,4 @@
-# zhuyi-skills
+# qingning-skills
 
 Claude Code 插件市场仓库，每个文件夹是一个独立 skill 插件。
 
@@ -11,8 +11,8 @@ Claude Code 插件市场仓库，每个文件夹是一个独立 skill 插件。
 ## 安装
 
 ```
-/plugin marketplace add asdf112255/skills
-/plugin install <插件名>@zhuyi-skills
+/plugin marketplace add qingningsoftware/skills
+/plugin install <插件名>@qingning-skills
 ```
 
 详细使用说明见各插件目录内的 README。

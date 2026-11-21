@@ -1,7 +1,7 @@
 {
-  "name": "zhuyi-skills",
-  "description": "zhuyi 的 Claude Code 插件集合：模型提供商切换等实用 skill",
-  "owner": { "name": "zhuyi" },
+  "name": "qingning-skills",
+  "description": "qingningsoftware 的 Claude Code 插件集合：模型提供商切换等实用 skill",
+  "owner": { "name": "qingningsoftware" },
   "plugins": [
     {
       "name": "model-switch",
