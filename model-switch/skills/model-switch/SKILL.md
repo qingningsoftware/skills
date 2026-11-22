@@ -11,7 +11,7 @@ description: 切换 Claude Code 的模型提供商配置（读写 ~/.claude/mode
 
 ## 脚本位置
 
-本 SKILL.md 同目录下的 `scripts/model_switch.py`（路径相对于本文件解析，个人 skill 与插件两种安装位置均适用）。用 Bash 运行 `python <脚本路径> <命令>`。
+本 SKILL.md 同目录下的 `scripts/model_switch.py`（路径相对于本文件解析，个人 skill 与插件两种安装位置均适用）。用 Bash 运行 `python <脚本路径> <命令>`；macOS/Linux 上若提示 `python` 不存在，改用 `python3`（脚本兼容两者）。
 
 ## 命令映射
 
@@ -20,6 +20,7 @@ description: 切换 Claude Code 的模型提供商配置（读写 ~/.claude/mode
 | `/model-switch list` | 运行 `python <脚本> list`，把列表展示给用户（token 已脱敏，不要输出完整 token） |
 | `/model-switch status` | 运行 `python <脚本> status`，展示当前生效配置 |
 | `/model-switch <key>` | 运行 `python <脚本> switch <key>`；成功后告诉用户"当前模型已修改成 <name>（<key>）" |
+| `/model-switch official` | 运行 `python <脚本> switch official`；成功后告诉用户"已切回 Claude Code 官方登录，其余配置未动" |
 | `/model-switch`（无参数） | 运行 `list`，把全部提供商整理成 markdown 表格输出（含"当前生效"标记），请用户直接回复要切换的 key。不要用 AskUserQuestion 弹窗做选择——它最多只能显示 4 个选项，提供商多于 4 个时必然列不全 |
 | `/model-switch add` | 进入添加模式：用 AskUserQuestion **逐项弹窗**录入（每项一个对话框，随时可按 Esc 取消整个流程），全部录完确认后写入。**不要把收到的 token 显示在回复里** |
 
@@ -52,4 +53,6 @@ python <脚本路径> add <key> --name <名称> --base-url <url> --token <token>
 - 脚本输出中的 token 已脱敏（如 `6e13****fdTi`）；回复用户时不要输出完整 token。
 - 用户给的 key 不存在时，脚本会打印可用 key，把列表展示给用户让其重选即可。
 - `openrouter` 这类没有 `model` 映射的 profile，切换时三个 `DEFAULT_*_MODEL` 变量会被移除（使用平台默认模型），属正常行为。
+- 配置目录默认 `~/.claude`；用户设置了 `CLAUDE_CONFIG_DIR` 环境变量时，脚本会自动改读该目录（与 Claude Code 行为一致），无需额外参数。
 - 切换不需要确认（用户已明确输入目标 key 时直接执行）；无参数时输出完整表格等用户回复 key，由用户的回复本身承担确认。
+- 本 skill 只管 **Claude Code** 的配置（settings.json）。用户要切换 **OpenAI Codex** 的提供商时，请引导其自行在终端运行 `python <脚本路径> codex list|status|switch|add`（零模型，详见仓库 model-switch README 的 Codex 章节），不要代为执行。

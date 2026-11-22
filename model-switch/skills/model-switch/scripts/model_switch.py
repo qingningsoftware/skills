@@ -10,9 +10,15 @@
                                            # 必填: --name --base-url --token
                                            # 可选: --opus --sonnet --haiku --force(覆盖同名)
 
+Codex 宿主（零模型切 ~/.codex/config.toml，同一脚本 codex 子命令）:
+  python model_switch.py codex list|status|switch|add ...
+  # 等价于 codex_switch.py 的同名命令；switch official = 切回 OpenAI 官方
+
 选项:
-  --profiles <path>   指定 model-profiles.json 路径（默认 ~/.claude/model-profiles.json）
-  --settings <path>   指定 settings.json 路径（默认 ~/.claude/settings.json）
+  --profiles <path>   指定 model-profiles.json 路径（默认 <配置目录>/model-profiles.json）
+  --settings <path>   指定 settings.json 路径（默认 <配置目录>/settings.json）
+
+配置目录: 设置了 CLAUDE_CONFIG_DIR 环境变量时用该目录，否则为 ~/.claude。
 
 说明:
   - model-profiles.json 是唯一配置源；脚本只改写 settings.json 的 env 中这 5 个变量:
@@ -42,7 +48,17 @@ MODEL_VARS = {
 BASE_URL_VAR = "ANTHROPIC_BASE_URL"
 TOKEN_VAR = "ANTHROPIC_AUTH_TOKEN"
 BACKUP_NAME = "settings.json.bak-model-switch"
+OFFICIAL_KEY = "official"
+# switch official 时从 settings.json env 移除的变量（切回 Claude Code 官方登录）
+MANAGED_VARS = (BASE_URL_VAR, TOKEN_VAR) + tuple(MODEL_VARS.values())
 PROFILES_BACKUP_NAME = "model-profiles.json.bak"
+CONFIG_DIR_ENV = "CLAUDE_CONFIG_DIR"
+
+
+def default_config_dir() -> str:
+    """Claude Code 用户级配置目录：优先 CLAUDE_CONFIG_DIR，否则 ~/.claude。"""
+    d = os.environ.get(CONFIG_DIR_ENV)
+    return d if d else os.path.join(os.path.expanduser("~"), ".claude")
 
 
 def out(*args):
@@ -181,6 +197,9 @@ def cmd_add(args):
     if not key:
         err("错误: add 需要提供商 key。用法: python model_switch.py add <key> --name <名称> --base-url <url> --token <token>")
         sys.exit(1)
+    if key == OFFICIAL_KEY:
+        err("错误: 'official' 是保留 key（switch official = 切回 Claude Code 官方登录），不能用作提供商 key。")
+        sys.exit(1)
 
     profiles = load_profiles_or_empty(args.profiles)
     if key in profiles and not args.force:
@@ -227,8 +246,30 @@ def cmd_add(args):
 
 
 def cmd_switch(args):
-    profiles = load_json(args.profiles, "model-profiles.json")
     key = args.key
+    settings = load_json(args.settings, "settings.json")
+
+    if key == OFFICIAL_KEY:
+        # 切回官方登录：移除脚本管理的 5 个变量，其余 env 原样保留
+        backup_path = os.path.join(os.path.dirname(os.path.abspath(args.settings)), BACKUP_NAME)
+        try:
+            shutil.copy2(args.settings, backup_path)
+        except OSError as e:
+            err(f"错误: 备份 settings.json 失败: {e}")
+            sys.exit(1)
+        env = settings.setdefault("env", {})
+        removed = [v for v in MANAGED_VARS if env.pop(v, None) is not None]
+        try:
+            atomic_write_json(args.settings, settings)
+        except SystemExit:
+            err(f"备份仍在: {backup_path}")
+            raise
+        out("已切回 Claude Code 官方登录（默认 Anthropic 配置）")
+        out(f"  移除变量: {', '.join(removed) if removed else '（无）'}")
+        out(f"  其余 env 变量原样保留；备份: {backup_path}")
+        return 0
+
+    profiles = load_json(args.profiles, "model-profiles.json")
     if key not in profiles:
         err(f"错误: 没有名为 '{key}' 的提供商。可用: {', '.join(profiles)}")
         sys.exit(1)
@@ -281,6 +322,15 @@ def main():
     except Exception:
         pass
 
+    # 宿主分发：`model_switch.py codex ...` 转发给 Codex 后端（零模型切 ~/.codex/config.toml）；
+    # `claude`/缺省 → 本文件原有的 Claude Code 逻辑。
+    if len(sys.argv) > 1 and sys.argv[1] in ("codex", "claude"):
+        host = sys.argv.pop(1)
+        if host == "codex":
+            import codex_switch
+            codex_switch.main()
+            return
+
     parser = argparse.ArgumentParser(
         prog="model_switch.py", description="切换 Claude Code 模型提供商"
     )
@@ -297,8 +347,8 @@ def main():
     parser.add_argument("--sonnet", help="add: sonnet 档模型映射（可选）")
     parser.add_argument("--haiku", help="add: haiku 档模型映射（可选）")
     parser.add_argument("--force", action="store_true", help="add: 覆盖同名提供商")
-    parser.add_argument("--profiles", default=os.path.join(os.path.expanduser("~"), ".claude", "model-profiles.json"))
-    parser.add_argument("--settings", default=os.path.join(os.path.expanduser("~"), ".claude", "settings.json"))
+    parser.add_argument("--profiles", default=os.path.join(default_config_dir(), "model-profiles.json"))
+    parser.add_argument("--settings", default=os.path.join(default_config_dir(), "settings.json"))
     args = parser.parse_args()
 
     if args.command == "add":

@@ -1,7 +1,7 @@
 {
   "glm": {
     "name": "GLM",
-    "baseUrl": "https://open.bigmodel.cn/api/anthropic",
+    "baseUrl": "<提供商的 Anthropic 协议地址，https:// 开头>",
     "token": "在这里填入你的 API Token",
     "model": {
       "opus": "glm-5.3",
